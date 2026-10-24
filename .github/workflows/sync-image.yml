@@ -1,0 +1,156 @@
+# Builds the Amby Notes sync server image from the source in MrDarkOm/amby-notes and
+# publishes it to ghcr.io/mrdarkom/ambynotes-sync. Started by hand (Actions -> Run workflow).
+#
+# Each architecture is built on a runner of its own kind (amd64 and arm64), because compiling
+# Rust under QEMU emulation is many times slower. A last job joins the two into one image, so
+# `docker pull` picks the right one on any machine.
+name: Publish sync server image
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "amby-notes commit SHA or branch to build"
+        required: true
+        type: string
+      version:
+        description: "Image version, e.g. 0.1.0 (also published as latest)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/mrdarkom/ambynotes-sync
+
+jobs:
+  resolve:
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check the version
+        id: check
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ! printf '%s' "$VERSION" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+            echo "version must look like 0.1.0, got: $VERSION" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - name: Check out amby-notes to find the exact commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: MrDarkOm/amby-notes
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+          sparse-checkout: sync
+      - name: Record the commit
+        id: sha
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Building MrDarkOm/amby-notes@$sha as version $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: resolve
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-24.04
+            pair: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            pair: arm64
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out amby-notes
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: MrDarkOm/amby-notes
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: sync
+          file: sync/server/Dockerfile
+          platforms: ${{ matrix.platform }}
+          provenance: false
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.title=Amby Notes sync server
+            org.opencontainers.image.description=End-to-end-encrypted sync server for Amby Notes: it stores your notes encrypted and cannot read them.
+            org.opencontainers.image.source=https://github.com/MrDarkOm/AmbyNotes-SelfHost
+            org.opencontainers.image.url=https://github.com/MrDarkOm/AmbyNotes-SelfHost
+            org.opencontainers.image.documentation=https://github.com/MrDarkOm/AmbyNotes-SelfHost#readme
+            org.opencontainers.image.version=${{ needs.resolve.outputs.version }}
+            org.opencontainers.image.revision=${{ needs.resolve.outputs.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+          cache-from: type=gha,scope=${{ matrix.pair }}
+          cache-to: type=gha,scope=${{ matrix.pair }},mode=max
+      - name: Save the digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: digest-${{ matrix.pair }}
+          path: ${{ runner.temp }}/digests/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Join the two architectures under :version and :latest
+        working-directory: ${{ runner.temp }}/digests
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          sources=()
+          for digest in *; do sources+=("$IMAGE@sha256:$digest"); done
+          docker buildx imagetools create \
+            --tag "$IMAGE:$VERSION" --tag "$IMAGE:latest" "${sources[@]}"
+      - name: Show the result
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: docker buildx imagetools inspect "$IMAGE:$VERSION"

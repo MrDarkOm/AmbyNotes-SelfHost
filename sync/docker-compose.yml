@@ -1,0 +1,50 @@
+# Amby Notes sync server with automatic HTTPS (Caddy gets and renews the certificate itself).
+#
+#   1. Point a DNS name at this machine and open ports 80 and 443.
+#   2. cp .env.example .env   and put your name in it:   AMBY_SYNC_DOMAIN=sync.example.org
+#   3. docker compose up -d
+#
+# The server speaks plain HTTP inside the compose network only; the world sees Caddy.
+# AMBY_SYNC_TRUST_PROXY=1 makes the server count failed sign-ins per client address from the
+# header Caddy sets. Never set it when clients can reach the server directly: they could then
+# write that header themselves.
+services:
+  amby-sync:
+    image: ghcr.io/mrdarkom/ambynotes-sync:${AMBY_SYNC_VERSION:-latest}
+    restart: unless-stopped
+    environment:
+      AMBY_SYNC_PUBLIC_URL: "https://${AMBY_SYNC_DOMAIN:?set AMBY_SYNC_DOMAIN in .env}"
+      AMBY_SYNC_TRUST_PROXY: "1"
+      # Optional limit, set in .env; when it is not there the variable is not passed at all.
+      AMBY_SYNC_QUOTA_BYTES_PER_USER:
+    volumes:
+      - amby-data:/data
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "amby-sync-server", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on:
+      amby-sync:
+        condition: service_healthy
+    environment:
+      AMBY_SYNC_DOMAIN: "${AMBY_SYNC_DOMAIN:?set AMBY_SYNC_DOMAIN in .env}"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  amby-data:
+  caddy-data:
+  caddy-config:
