@@ -2,7 +2,7 @@
 
 [English version](README.md)
 
-Здесь всё, что нужно, чтобы запустить **сервер синхронизации** для [Amby Notes](https://github.com/MrDarkOm/amby-notes) на своём компьютере: файл Docker Compose с готовым образом, настройка Caddy, который сам получает HTTPS-сертификат, и эта инструкция. Кода сервера здесь нет: он лежит в [`amby-notes/sync/`](https://github.com/MrDarkOm/amby-notes/tree/main/sync), а образ `ghcr.io/mrdarkom/ambynotes-sync` собирается из него.
+Здесь всё, что нужно, чтобы запустить **сервер синхронизации** для [Amby Notes](https://github.com/MrDarkOm/amby-notes) на своём компьютере: файл Docker Compose с готовым образом, настройка Caddy, который сам получает HTTPS-сертификат, и эта инструкция. Кода сервера здесь нет: он лежит в [`amby-notes/sync/`](https://github.com/MrDarkOm/amby-notes/tree/dev/sync), а образ `ghcr.io/mrdarkom/ambynotes-sync` собирается из него.
 
 ## Что сервер видит и чего не видит
 
@@ -65,7 +65,7 @@ docker compose exec amby-sync amby-sync-server user remove alice --yes   # уд�
 | `AMBY_SYNC_VERSION`              | `latest`      | версия образа, см. [Закрепить версию](#закрепить-версию)     |
 | `AMBY_SYNC_QUOTA_BYTES_PER_USER` | без ограничения | сколько зашифрованных байт может хранить один пользователь |
 
-Остальные настройки сервера (срок хранения версий, лимиты загрузки и т. д.) перечислены в [README сервера](https://github.com/MrDarkOm/amby-notes/blob/main/sync/server/README.md#settings); при необходимости добавьте их в `environment:` сервиса `amby-sync` в `docker-compose.yml`.
+Остальные настройки сервера (срок хранения версий, лимиты загрузки и т. д.) перечислены в [README сервера](https://github.com/MrDarkOm/amby-notes/blob/dev/sync/server/README.md#settings); при необходимости добавьте их в `environment:` сервиса `amby-sync` в `docker-compose.yml`.
 
 ## Резервная копия
 
@@ -122,6 +122,6 @@ AMBY_SYNC_VERSION=0.1.0
 
 ## Исходный код и лицензия
 
-Исходный код сервера: [`MrDarkOm/amby-notes`, папка `sync/`](https://github.com/MrDarkOm/amby-notes/tree/main/sync). Каждый опубликованный образ хранит точный коммит, из которого собран, в метке `org.opencontainers.image.revision`.
+Исходный код сервера: [`MrDarkOm/amby-notes`, папка `sync/`](https://github.com/MrDarkOm/amby-notes/tree/dev/sync). Каждый опубликованный образ хранит точный коммит, из которого собран, в метке `org.opencontainers.image.revision`.
 
 Лицензия: [AGPL-3.0](LICENSE).

@@ -2,7 +2,7 @@
 
 [Русская версия](README.ru.md)
 
-This repository holds everything you need to run the **sync server** for [Amby Notes](https://github.com/MrDarkOm/amby-notes) on your own machine: a Docker Compose file that uses a ready-made image, a Caddy config that gets the HTTPS certificate for you, and these instructions. It contains no server code; the source lives in [`amby-notes/sync/`](https://github.com/MrDarkOm/amby-notes/tree/main/sync) and the image `ghcr.io/mrdarkom/ambynotes-sync` is built from it.
+This repository holds everything you need to run the **sync server** for [Amby Notes](https://github.com/MrDarkOm/amby-notes) on your own machine: a Docker Compose file that uses a ready-made image, a Caddy config that gets the HTTPS certificate for you, and these instructions. It contains no server code; the source lives in [`amby-notes/sync/`](https://github.com/MrDarkOm/amby-notes/tree/dev/sync) and the image `ghcr.io/mrdarkom/ambynotes-sync` is built from it.
 
 ## What the server can and cannot see
 
@@ -65,7 +65,7 @@ User names are 1 to 64 characters from `a-z 0-9 . _ -`, starting and ending with
 | `AMBY_SYNC_VERSION`              | `latest` | image version to run, see [Pin a version](#pin-a-version)    |
 | `AMBY_SYNC_QUOTA_BYTES_PER_USER` | no limit | most encrypted bytes one user may keep                       |
 
-Other server settings (version retention, upload limits, …) are listed in the [server README](https://github.com/MrDarkOm/amby-notes/blob/main/sync/server/README.md#settings); add them under `environment:` of `amby-sync` in `docker-compose.yml` if you need them.
+Other server settings (version retention, upload limits, …) are listed in the [server README](https://github.com/MrDarkOm/amby-notes/blob/dev/sync/server/README.md#settings); add them under `environment:` of `amby-sync` in `docker-compose.yml` if you need them.
 
 ## Back up
 
@@ -122,6 +122,6 @@ and run `docker compose up -d`. The available versions are listed under *Package
 
 ## Source and license
 
-The server source is in [`MrDarkOm/amby-notes`, folder `sync/`](https://github.com/MrDarkOm/amby-notes/tree/main/sync). Every published image records the exact commit it was built from in the label `org.opencontainers.image.revision`.
+The server source is in [`MrDarkOm/amby-notes`, folder `sync/`](https://github.com/MrDarkOm/amby-notes/tree/dev/sync). Every published image records the exact commit it was built from in the label `org.opencontainers.image.revision`.
 
 Licensed under the [AGPL-3.0](LICENSE).
