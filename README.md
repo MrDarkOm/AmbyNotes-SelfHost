@@ -42,7 +42,9 @@ In the app, enter `https://sync.example.org` as the server address.
 
 The server speaks plain HTTP only inside the Compose network; port 8080 is not published. Do not publish it: passwords and notes must travel over HTTPS.
 
-## Add users
+## Accounts
+
+By default only the accounts you add can sign in:
 
 ```bash
 docker compose exec amby-sync amby-sync-server user add alice
@@ -50,22 +52,90 @@ docker compose exec amby-sync amby-sync-server user add alice
 
 It prints a **one-time code** valid for 24 hours. In the app, enter the server address, the user name and the code, then choose a password. The app creates the keys and shows a **recovery code: save it**. Running `user add` again for a name that has not set a password yet gives a new code and burns the old one.
 
+To let people create an account themselves, set `AMBY_SYNC_OPEN_REGISTRATION=1` in `.env`. Attempts are limited per address, and `AMBY_SYNC_MAX_USERS` caps the number of accounts. Names you reserved with `user add` stay reserved.
+
 ```bash
 docker compose exec amby-sync amby-sync-server user list
 docker compose exec amby-sync amby-sync-server user remove alice --yes   # deletes everything of alice, for good
 ```
 
-User names are 1 to 64 characters from `a-z 0-9 . _ -`, starting and ending with a letter or a digit.
+User names are 1 to 64 characters from `a-z 0-9 . _ -`, starting and ending with a letter or a digit; capital letters are turned into small ones.
+
+## Plans and subscriptions
+
+Without a plans file every account may sync and only the settings below limit it. A plans file gives accounts named sets of limits. Put it in the data volume as `/data/plans.json`:
+
+```json
+{
+  "default_plan": "free",
+  "plans": {
+    "free": { "title": "Free", "sync": false },
+    "notes": {
+      "title": "Notes",
+      "sync": true,
+      "max_total_bytes": 1000000000,
+      "max_file_bytes": 30416160,
+      "max_history_bytes": 1000000000
+    }
+  }
+}
+```
+
+- `sync: false` makes a plan **without sync**: the account exists (sign-in, password, names), the data already on the server can be downloaded, restored and deleted, but nothing new is sent. A missing `sync` means `true`.
+- The other limits are optional: `max_spaces`, `max_total_bytes` (current files and unfinished uploads), `max_file_bytes`, `history_days`, `max_history_bytes` (old versions; over it the oldest are removed). Old versions do not count against `max_total_bytes`, so set `max_history_bytes` if accounts you do not know use the server.
+- New accounts get `default_plan`. Give an account a plan, with an optional last day (inclusive, UTC), or take it back:
+
+```bash
+docker compose exec amby-sync amby-sync-server user plan set alice notes --until 2026-12-31
+docker compose exec amby-sync amby-sync-server user plan set alice --default
+docker compose exec amby-sync amby-sync-server user plan show alice
+```
+
+After the last day the account falls back to `default_plan` by itself; nothing is deleted. The app has a "Get a subscription" button; there is no payment yet, it tells the person to ask you.
+
+The plans file is read at start. Check a new one before you switch, because a broken file stops the server:
+
+```bash
+docker compose cp plans.json amby-sync:/data/plans.new.json
+docker compose exec amby-sync amby-sync-server plans check /data/plans.new.json
+docker compose exec amby-sync mv /data/plans.new.json /data/plans.json
+docker compose restart amby-sync
+```
 
 ## Settings (`.env`)
 
-| Variable                         | Default  | Meaning                                                      |
-| -------------------------------- | -------- | ------------------------------------------------------------ |
-| `AMBY_SYNC_DOMAIN`               | required | your DNS name, without `https://`                            |
-| `AMBY_SYNC_VERSION`              | `latest` | image version to run, see [Pin a version](#pin-a-version)    |
-| `AMBY_SYNC_QUOTA_BYTES_PER_USER` | no limit | most encrypted bytes one user may keep                       |
+| Variable                         | Default  | Meaning                                                               |
+| -------------------------------- | -------- | --------------------------------------------------------------------- |
+| `AMBY_SYNC_DOMAIN`               | required | your DNS name, without `https://`                                     |
+| `AMBY_SYNC_VERSION`              | `latest` | image version to run, see [Pin a version](#pin-a-version)             |
+| `AMBY_SYNC_OPEN_REGISTRATION`    | `0`      | `1`: accounts can be created from the app without a code              |
+| `AMBY_SYNC_MAX_USERS`            | no limit | most accounts open registration may reach                             |
+| `AMBY_SYNC_MAX_BLOB_BYTES`       | 512 MiB  | largest encrypted file; `30416160` matches the 30 MB limit of the app |
+| `AMBY_SYNC_QUOTA_BYTES_PER_USER` | no limit | most encrypted bytes one user may keep (a ceiling over every plan)    |
+| `AMBY_SYNC_MIN_FREE_BYTES`       | 1 GiB    | free disk space kept; below it new uploads and accounts are refused   |
+| `AMBY_SYNC_RETAIN_VERSION_DAYS`  | `30`     | days to keep replaced and deleted versions                            |
+| `AMBY_SYNC_MAX_LARGE_BODIES`     | `4`      | requests over 1 MiB read at once; more get "busy, try later"          |
 
-Other server settings (version retention, upload limits, …) are listed in the [server README](https://github.com/MrDarkOm/amby-notes/blob/dev/sync/server/README.md#settings); add them under `environment:` of `amby-sync` in `docker-compose.yml` if you need them.
+`.env.example` explains each one. The complete list, the protocol and the formats are in the [sync format v1](https://github.com/MrDarkOm/amby-notes/blob/dev/docs/sync-format.md).
+
+## Limits that protect the server
+
+- When the disk has less free space than `AMBY_SYNC_MIN_FREE_BYTES`, the server refuses new accounts, new vaults and new uploads; people see that the server is running out of space. Reading, downloading and deleting keep working, so space can be freed.
+- Sign-in requests are at most 64 KiB, and at most `AMBY_SYNC_MAX_LARGE_BODIES` large requests are read at once, so a stranger cannot fill the memory of the server.
+- Failed sign-ins are limited per address and per name. Behind the bundled Caddy the server reads the real address from the header Caddy sets (`AMBY_SYNC_TRUST_PROXY=1` in `docker-compose.yml`); never publish port 8080 directly.
+
+## Deleting data
+
+- **From the app**: a person can delete the server copy of a vault ("Delete from server…" in the sync settings). Only the server copy and its old versions go; the files on every device stay, and the other devices stop syncing that vault by themselves.
+- **As the administrator**:
+
+```bash
+docker compose exec amby-sync amby-sync-server space list alice                 # ids and sizes, names stay encrypted
+docker compose exec amby-sync amby-sync-server space remove alice <space_id> --yes
+docker compose exec amby-sync amby-sync-server user remove alice --yes
+```
+
+These cannot be undone: make a backup first.
 
 ## Back up
 
@@ -77,9 +147,9 @@ docker cp "$(docker compose ps -q amby-sync)":/data/backups/today ./amby-backup-
 docker compose exec amby-sync rm -r /data/backups/today
 ```
 
-The copy (`amby-sync.db` and, if you have attachments, `blobs/`) is as unreadable as the live data. Keep it on another machine too, and remember that **every device also holds a full copy of your notes**.
+The copy (`amby-sync.db` and, if there are attachments, `blobs/`) is as unreadable as the live data. Keep `plans.json` and your `.env` with it. Keep a copy on another machine too, and remember that **every device also holds a full copy of its notes**.
 
-## Restore
+## Restore and roll back
 
 Run these in the `sync` folder, with the backup in `./amby-backup-today`:
 
@@ -93,6 +163,8 @@ docker compose up -d
 
 The `-wal` and `-shm` files belong to the database being replaced, so they must go. A restored server is older than what your devices have seen; they notice that it went back in time and do not delete anything to match it.
 
+To go back to an older server version after an update, restore the backup made before the update and pin the old version in `.env` (`AMBY_SYNC_VERSION`). A server refuses to open a database written by a newer version, so an older image alone does not start. When a new version changes the database, it also keeps its own copy of the old one in `/data/backups/pre-v<N>-<time>.db`.
+
 ## Update
 
 Make a backup first (see above), then:
@@ -101,23 +173,24 @@ Make a backup first (see above), then:
 cd AmbyNotes-SelfHost && git pull     # also updates this kit
 cd sync
 docker compose pull && docker compose up -d
+docker compose ps                     # wait for "healthy"
 ```
 
-The database updates itself on the first start of the new version. A server refuses to open a database written by a newer version, so going back to an older version needs the backup.
+The database updates itself on the first start of the new version, after making the copy described above. The features described here (plans with `sync`, `--until`, the disk and request limits) need server **0.2.0** or newer.
 
 ## Pin a version
 
 By default the server runs `latest`. To update only when you choose, put a number in `.env`:
 
 ```
-AMBY_SYNC_VERSION=0.1.0
+AMBY_SYNC_VERSION=0.2.0
 ```
 
-and run `docker compose up -d`. The available versions are listed under *Packages* on the [repository page](https://github.com/MrDarkOm/AmbyNotes-SelfHost). Caddy is pinned to its major version (`caddy:2`).
+and run `docker compose up -d`. The available versions are listed under _Packages_ on the [repository page](https://github.com/MrDarkOm/AmbyNotes-SelfHost). Caddy is pinned to its major version (`caddy:2`).
 
 ## Good to know
 
-- `docker compose ps` shows the server as *healthy* when `/v1/info` answers. `docker compose logs amby-sync` shows the log; it never contains tokens, keys, enrolment codes or request bodies.
+- `docker compose ps` shows the server as _healthy_ when `/v1/info` answers. `docker compose logs amby-sync` shows the log; it never contains tokens, keys, enrolment codes or request bodies.
 - A server whose data was erased gets a new random identity, so a device that sees it stops instead of deleting its files to match an empty server.
 
 ## Source and license
