@@ -15,8 +15,15 @@ services:
     environment:
       AMBY_SYNC_PUBLIC_URL: "https://${AMBY_SYNC_DOMAIN:?set AMBY_SYNC_DOMAIN in .env}"
       AMBY_SYNC_TRUST_PROXY: "1"
-      # Optional limit, set in .env; when it is not there the variable is not passed at all.
+      # Optional settings, set in .env; a variable that is not there is not passed at all and the
+      # server uses its default. See README.md, "Settings".
+      AMBY_SYNC_OPEN_REGISTRATION:
+      AMBY_SYNC_MAX_BLOB_BYTES:
       AMBY_SYNC_QUOTA_BYTES_PER_USER:
+      AMBY_SYNC_MIN_FREE_BYTES:
+      AMBY_SYNC_MAX_USERS:
+      AMBY_SYNC_MAX_LARGE_BODIES:
+      AMBY_SYNC_RETAIN_VERSION_DAYS:
     volumes:
       - amby-data:/data
     expose:
