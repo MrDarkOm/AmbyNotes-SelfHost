@@ -115,6 +115,7 @@ docker compose restart amby-sync
 | `AMBY_SYNC_MIN_FREE_BYTES`       | 1 GiB    | free disk space kept; below it new uploads and accounts are refused   |
 | `AMBY_SYNC_RETAIN_VERSION_DAYS`  | `30`     | days to keep replaced and deleted versions                            |
 | `AMBY_SYNC_MAX_LARGE_BODIES`     | `4`      | requests over 1 MiB read at once; more get "busy, try later"          |
+| `AMBY_SYNC_BODY_TIMEOUT_SECS`    | `60`     | seconds a request may stop sending before it is refused (0.2.1)       |
 
 `.env.example` explains each one. The complete list, the protocol and the formats are in the [sync format v1](https://github.com/MrDarkOm/amby-notes/blob/dev/docs/sync-format.md).
 
@@ -122,6 +123,7 @@ docker compose restart amby-sync
 
 - When the disk has less free space than `AMBY_SYNC_MIN_FREE_BYTES`, the server refuses new accounts, new vaults and new uploads; people see that the server is running out of space. Reading, downloading and deleting keep working, so space can be freed.
 - Sign-in requests are at most 64 KiB, and at most `AMBY_SYNC_MAX_LARGE_BODIES` large requests are read at once, so a stranger cannot fill the memory of the server.
+- Since 0.2.1 a request that stops sending its body is refused after `AMBY_SYNC_BODY_TIMEOUT_SECS`, and one device keeps at most four event streams. Set limits in your proxy too.
 - Failed sign-ins are limited per address and per name. Behind the bundled Caddy the server reads the real address from the header Caddy sets (`AMBY_SYNC_TRUST_PROXY=1` in `docker-compose.yml`); never publish port 8080 directly.
 
 ## Deleting data
@@ -183,7 +185,7 @@ The database updates itself on the first start of the new version, after making 
 By default the server runs `latest`. To update only when you choose, put a number in `.env`:
 
 ```
-AMBY_SYNC_VERSION=0.2.0
+AMBY_SYNC_VERSION=0.2.1
 ```
 
 and run `docker compose up -d`. The available versions are listed under _Packages_ on the [repository page](https://github.com/MrDarkOm/AmbyNotes-SelfHost). Caddy is pinned to its major version (`caddy:2`).

@@ -23,6 +23,7 @@ services:
       AMBY_SYNC_MIN_FREE_BYTES:
       AMBY_SYNC_MAX_USERS:
       AMBY_SYNC_MAX_LARGE_BODIES:
+      AMBY_SYNC_BODY_TIMEOUT_SECS:
       AMBY_SYNC_RETAIN_VERSION_DAYS:
     volumes:
       - amby-data:/data
